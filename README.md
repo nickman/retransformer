@@ -3,6 +3,27 @@
 Simple Method Replacement for Java Using Retransforms
 
 Retransformer is intended as a testing tool and allows for the runtime modification of methods in targeted java classes. This can simplify testing procedure by allowing modifications to loaded objects and business classes to stub out functionality where the native functionality may not be available in the test environment.
+
+#### Shutup and get to the point
+
+Ok. Assume a class called English which returns words in English, and the same for Spanish. Here's how to graft Spanish methods into the English class:
+```java
+import com.heliosapm.aop.retransformer.Retransformer;
+.....   
+final English english = new English();   
+Assert.assertEquals("Hello", english.getHello());   
+Retransformer.getInstance().transform(English.class, Spanish.class);   
+Assert.assertEquals("Hola", english.getHello());   
+// Whaaat ? Restore the english stuff
+Retransformer.getInstance().restore(English.class);
+```
+
+To build:
+ 1. Clone this repository:  ```git clone https://github.com/nickman/retransformer.git``` 
+ 2. Run a maven [3] build:  ```mvn clean install```
+
+#### Back to the scheduled pace.
+
  
 Retransformer uses the Java Instrumentation API to issue retransform requests at runtime. The high level requirements to modify a class via retransforms are:
  * A refererence to a java.lang.intrument.Intsrumentation object. Retransformer provides 2 different ways of acquiring one. 
