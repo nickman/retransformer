@@ -1,27 +1,3 @@
-/**
- * Helios, OpenSource Monitoring
- * Brought to you by the Helios Development Group
- *
- * Copyright 2007, Helios Development Group and individual contributors
- * as indicated by the @author tags. See the copyright.txt file in the
- * distribution for a full listing of individual contributors.
- *
- * This is free software; you can redistribute it and/or modify it
- * under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation; either version 2.1 of
- * the License, or (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this software; if not, write to the Free
- * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
- * 02110-1301 USA, or see the FSF site: http://www.fsf.org. 
- *
- */
 package com.heliosapm.aop.retransformer;
 
 import java.lang.instrument.ClassFileTransformer;
@@ -30,9 +6,13 @@ import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import javassist.ByteArrayClassPath;
 import javassist.ClassClassPath;
@@ -48,12 +28,11 @@ import javassist.bytecode.annotation.StringMemberValue;
 
 /**
  * <p>Title: Retransformer</p>
- * <p>Description: </p> 
+ * <p>Description: The retransformation singleton</p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
  * <p><code>com.heliosapm.aop.retransformer.Retransformer</code></p>
  */
-
 public class Retransformer {
 	/** The singleton instance */
 	private static volatile Retransformer instance = null;
@@ -199,11 +178,10 @@ public class Retransformer {
 		}
 		ClassFileTransformer transformer = null;
 		try {
-			final Class<?>[] transformTarget = new Class[1];
-			transformer = newClassFileTransformer(targetClass, failOnNotFound, sourceMap, transformTarget);
-			instrumentation.addTransformer(transformer, true);
-			log("-----TRANS: %s", transformTarget[0].getName());
-			instrumentation.retransformClasses(transformTarget[0]);
+			final Set<Class<?>> transformTargets = new HashSet<Class<?>>();
+			transformer = newClassFileTransformer(targetClass, failOnNotFound, sourceMap, transformTargets);
+			instrumentation.addTransformer(transformer, true);			
+			instrumentation.retransformClasses(transformTargets.toArray(new Class[transformTargets.size()]));
 		} catch (Exception ex) {
 			throw new RuntimeException("Failed to transform [" + targetClass.getName() + "]", ex);
 		} finally {
@@ -246,69 +224,61 @@ public class Retransformer {
 	 * @param targetClass The class to transform
 	 * @param failOnNotFound If true, any not found method will throw. Otherwise, if some (but not all) methods are not found, they are ignored.
 	 * @param sourceMap A map of source code replacements keyed by the method descriptor of the methods to replace
-	 * @param transformTarget The class to transform is set in this array, since it could be the passed class, or it could be the parent.
+	 * @param transformTargets A set that the actual Java classes that need to be transformed should be written into
 	 * @return the transformer
 	 */
-	protected ClassFileTransformer newClassFileTransformer(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap, final Class<?>[] transformTarget) {
-		final String[] internalFormClassName = new String[1];
-		final String binaryName = targetClass.getName();
+	protected ClassFileTransformer newClassFileTransformer(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap, final Set<Class<?>> transformTargets) {
+		final Map<CtClass, Set<CtMethod>> actualTargets =  getMatchedMethods(targetClass, failOnNotFound, sourceMap);
+		if(actualTargets.isEmpty()) throw new RuntimeException("Failed to match any methods");
+		final Map<String, CtClass> internalClassNames = new HashMap<String, CtClass>(actualTargets.size());
+		for(CtClass klass: actualTargets.keySet()) {
+			internalClassNames.put(internalForm(klass.getName()), klass);
+			if(targetClass.getName().equals(klass.getName())) {
+				transformTargets.add(targetClass);
+			} else {
+				try {
+					transformTargets.add(Class.forName(klass.getName(), true, targetClass.getSuperclass().getClassLoader()));
+				} catch (Exception ex) {
+					throw new RuntimeException("Failed to load class [" + klass.getName() + "]", ex);
+				}
+			}
+			
+		}
 		return new ClassFileTransformer(){
 			@Override
-			public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
-				log("Inspecting class [%s]", className);
-					if(internalFormClassName[0].equals(className)) {
+			public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {				
+					if(internalClassNames.containsKey(className)) {
 						try {
-							log("\n\t================\n\tTransforming [%s]\n\tUsing Source Map\n\t================", binaryForm(internalFormClassName[0]));
-							ClassPool cp = new ClassPool();
-							cp.appendSystemPath();
-							cp.appendClassPath(new ByteArrayClassPath(binaryName, classfileBuffer));
+							log("\n\t================\n\tTransforming [%s]\n\tUsing Source Map\n\t================", binaryForm(className));
+							final CtClass targetClazz = internalClassNames.get(className);							
+							ClassPool cp = targetClazz.getClassPool();														
 							if(loader!=null) {
 								cp.appendClassPath(new LoaderClassPath(loader));
 							}
-							CtClass targetClazz = cp.get(binaryName);						 
-							int methodCount = 0;
-							for(Map.Entry<String, String> entry: sourceMap.entrySet()) {
-								String key = entry.getKey();								
-								String methodName = null;
-								String descriptor = null;
-								int index = key.indexOf(':');
-								if(index==-1) {
-									methodName = key.trim();
-									descriptor = null;
-								} else {
-									methodName = key.substring(0, index).trim();
-									descriptor = key.substring(index+1).trim();									
-								}								
-								String source = entry.getValue();
-								CtMethod ctMethod = null;
-								try {
-									if(descriptor==null) {
-										try {
-											ctMethod = targetClazz.getDeclaredMethod(methodName);
-										} catch (NotFoundException nfe) {
-											CtClass crnt = targetClazz;
-											while(crnt.getSuperclass()!=null) {
-												crnt = crnt.getSuperclass();
-												try {
-													ctMethod = crnt.getDeclaredMethod(methodName);
-													break;
-												} catch (NotFoundException nfx) { /* No Op */}
-											}
-											if(ctMethod==null) throw new NotFoundException("Failed to find method [" + methodName + "]"); 
-										}
-									} else {
-										ctMethod = targetClazz.getMethod(methodName, descriptor);
+							Set<CtMethod> targetMethods = actualTargets.get(targetClazz);
+							for(CtMethod targetMethod: targetMethods) {
+								
+								
+								String sourceKey = null;
+								String source = null;
+								if(targetMethod.getParameterTypes().length>0) {
+									sourceKey = targetMethod.getName() + ":" + targetMethod.getSignature();
+									source = sourceMap.get(sourceKey);
+									if(source == null) {
+										// some slacker left off the descriptor because the method name is unique
+										sourceKey = targetMethod.getName();
+										source = sourceMap.get(sourceKey);
 									}
-								} catch (Exception ex) {
-									if(failOnNotFound) throw new RuntimeException("Failed to find method [" + key + "] in class [" + binaryName + "]");
+								} else {
+									sourceKey = targetMethod.getName();
+									source = sourceMap.get(sourceKey);
 								}
-								internalFormClassName[0] = internalForm(ctMethod.getDeclaringClass().getName());
-								transformTarget[0] = Class.forName(ctMethod.getDeclaringClass().getName(), true, targetClass.getClassLoader());
-								ctMethod.setBody(source);
-								methodCount++;
-							}
-							if(methodCount==0) {
-								throw new RuntimeException("Failed to replace any methods");
+								
+								if(source==null) {
+									throw new RuntimeException("Failed to locate source with key [" + sourceKey + "] for method [" + targetMethod.getLongName() + "]");
+								}
+								
+								targetMethod.setBody(source);
 							}
 							ConstPool constpool = targetClazz.getClassFile().getConstPool();
 							AnnotationsAttribute attr = new AnnotationsAttribute(constpool, AnnotationsAttribute.visibleTag);
@@ -320,10 +290,9 @@ public class Retransformer {
 							attr.addAnnotation(annot);	
 							targetClazz.getClassFile().addAttribute(attr);							
 							byte[] byteCode =  targetClazz.toBytecode();
-							return byteCode;
-							
+							return byteCode;							
 						} catch (Exception ex) {
-							loge("Transform for [%s] using source map failed: %s", binaryName, ex);
+							loge("Transform for [%s] using source map failed: %s", targetClass.getName(), ex);
 							throw new RuntimeException(ex);							
 						}
 					}
@@ -395,7 +364,69 @@ public class Retransformer {
 		}; 
 	}
 	
+	/**
+	 * Finds the matched methods 
+	 * @param targetClass The class to inspect and traverse from
+	 * @param failOnNotFound true to fail on not found, false otherwise
+	 * @param sourceMap The map of method names/descriptors and sources
+	 * @return A map of sets of target methods keyed by the class they are declared in
+	 */
+	protected Map<CtClass, Set<CtMethod>> getMatchedMethods(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap) {
+		try {
+			final Map<CtClass, Set<CtMethod>> actualTargets = new HashMap<CtClass, Set<CtMethod>>();
+			final ClassPool classPool = new ClassPool();
+			classPool.appendSystemPath();
+			classPool.appendClassPath(new ClassClassPath(targetClass));
+			final CtClass targetCtClass = classPool.get(targetClass.getName());
+			for(Map.Entry<String, String> entry: sourceMap.entrySet()) {
+				String key = entry.getKey();								
+				String methodName = null;
+				String descriptor = null;
+				int index = key.indexOf(':');
+				if(index==-1) {
+					methodName = key.trim();
+					descriptor = null;
+				} else {
+					methodName = key.substring(0, index).trim();
+					descriptor = key.substring(index+1).trim();									
+				}								
+				CtMethod matchedMethod = null;
+				try {
+					matchedMethod = matchMethod(methodName, descriptor, targetCtClass);
+					// =============================================================================================
+					//   Class redefinition !!!
+					// =============================================================================================
+//					if(!matchedMethod.getDeclaringClass().equals(targetCtClass)) {
+//						if(!Modifier.isFinal(matchedMethod.getModifiers())) {
+//							matchedMethod = CtNewMethod.copy(matchedMethod, targetCtClass, null);
+//							targetCtClass.addMethod(matchedMethod);
+//							
+//						}
+//					}
+				} catch (Exception ex) {
+					if(failOnNotFound) throw ex;
+				}
+				Set<CtMethod> methods = actualTargets.get(matchedMethod.getDeclaringClass());
+				if(methods==null) {
+					methods = new HashSet<CtMethod>();
+					actualTargets.put(matchedMethod.getDeclaringClass(), methods);
+				}
+				methods.add(matchedMethod);				
+			}
+			return actualTargets;
+		} catch (Exception ex) {
+			throw new RuntimeException(ex);
+		}
+	}
 	
+	
+	/**
+	 * Matches a method name and optional descriptor
+	 * @param methodName The method name
+	 * @param descriptor The optional descriptor
+	 * @param klass The class to inspect
+	 * @return the matched method
+	 */
 	protected static CtMethod matchMethod(final String methodName, final String descriptor, final CtClass klass) {
 		CtMethod ctMethod = null;
 		try {
@@ -408,6 +439,12 @@ public class Retransformer {
 						crnt = crnt.getSuperclass();
 						try {
 							ctMethod = crnt.getDeclaredMethod(methodName);
+							// check to see if this is ambig.
+							int cnt = 0;
+							for(CtMethod ctm: crnt.getMethods()) {
+								if(methodName.equals(ctm.getName())) cnt++;
+							}
+							if(cnt>1) throw new RuntimeException("Method match failed on [" + methodName + "]. Ambiguous methods. Please specify a method descriptor");
 							break;
 						} catch (NotFoundException nfx) { /* No Op */}
 					}
@@ -423,67 +460,19 @@ public class Retransformer {
 
 	}
 	
-//    /**
-//     * Appends the descriptor of the given class to the given string buffer.
-//     * @param buf the string buffer to which the descriptor must be appended.
-//     * @param c the class whose descriptor must be computed.
-//     * (Derived from ObjectWeb ASM, modified for use with CtClass)
-//     * @author Eric Bruneton  
-//     * @author Chris Nokleberg
-//     */
-//    static void getDescriptor(final CtMethod ctMethod) {
-//    	if(ctMethod==null) throw new IllegalArgumentException("The passed CtMethod was null");
-//        CtClass d = ctMethod.getReturnType();
-//        if (d.isPrimitive()) {
-//            if (d == CtClass.charType) {
-//                return "I";
-//            } else if (d == Void.TYPE) {
-//                car = 'V';
-//            } else if (d == Boolean.TYPE) {
-//                car = 'Z';
-//            } else if (d == Byte.TYPE) {
-//                car = 'B';
-//            } else if (d == Character.TYPE) {
-//                car = 'C';
-//            } else if (d == Short.TYPE) {
-//                car = 'S';
-//            } else if (d == Double.TYPE) {
-//                car = 'D';
-//            } else if (d == Float.TYPE) {
-//                car = 'F';
-//            } else /* if (d == Long.TYPE) */{
-//                car = 'J';
-//            }
-//            buf.append(car);
-//            return;
-//        } else if (d.isArray()) {
-//            buf.append('[');
-//            d = d.getComponentType();
-//        } else {
-//            buf.append('L');
-//            String name = d.getName();
-//            int len = name.length();
-//            for (int i = 0; i < len; ++i) {
-//                char car = name.charAt(i);
-//                buf.append(car == '.' ? '/' : car);
-//            }
-//            buf.append(';');
-//            return;
-//        }        
-//    }
 	
 	
 	/**
-	 * Restores a transformed class back to its original form 
-	 * @param targetClass The class to restore
+	 * Restores transformed classes back to their original form 
+	 * @param targetClasses The classes to restore
 	 */
-	public synchronized void restore(final Class<?> targetClass) {
-		if(targetClass==null) throw new IllegalArgumentException("Passed target class was null");
+	public synchronized void restore(final Class<?>... targetClasses) {
+		if(targetClasses==null) throw new IllegalArgumentException("Passed target class was null");
 		try {
 //			log("\n\t================\n\tRestoring [%s]\n\t================", targetClass.getName());
-			instrumentation.retransformClasses(targetClass);
+			instrumentation.retransformClasses(targetClasses);
 		} catch (Throwable e) {
-			throw new RuntimeException("Failed to restore class [" + targetClass.getName() + "]", e);
+			throw new RuntimeException("Failed to restore classes " + Arrays.toString(targetClasses) , e);
 		}
 	}	
 	
@@ -558,7 +547,7 @@ public class Retransformer {
 	/**
 	 * <p>Title: InstrumentedImpl</p>
 	 * <p>Description: A concrete pojo to represent an @Instrumented annotation instance</p> 
-	 * <p><code>com.heliosapm.aop.retransformer.Retransformer.InstrumentedImpl</code></p>
+	 * <p><code>com.theice.bec.retransformer.Retransformer.InstrumentedImpl</code></p>
 	 */
 	public static class InstrumentedImpl {
 		/** The annotation instance */
