@@ -10,7 +10,7 @@ Retransformer uses the Java Instrumentation API to issue retransform requests at
  
 # Benefits
  
-There's a few different ways to modify behavior in classes to be tested. A similar style is called [PowerMock](https://code.google.com/p/powermock/). It sort of does the same thing but requires the use of custom JRun test runners and other bits and pieces. I wrote Retransformer because i thought it was easier. 
+There's a few different ways to modify behavior in classes to be tested. A similar style is called [PowerMock](https://code.google.com/p/powermock/). It sort of does the same thing but requires the use of custom JUnit test runners and other bits and pieces. I wrote Retransformer because I thought it was easier to use with less overhead. Having said that, PowerMock has a much larger agenda and does a lot more.
 One of the difficult to replicate benefits is that when a class is retransformed, all of its objects change with it, regardless of where they are (as long as they are resident in the JVM and from the same classloader) 
 Classes with a large number of methods can be arduous to mock, but retransformations allows you to replace only the ones you need to for the current test. 
  
