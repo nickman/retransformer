@@ -547,7 +547,9 @@ public class Retransformer {
 	/**
 	 * <p>Title: InstrumentedImpl</p>
 	 * <p>Description: A concrete pojo to represent an @Instrumented annotation instance</p> 
-	 * <p><code>com.theice.bec.retransformer.Retransformer.InstrumentedImpl</code></p>
+	 * <p>Company: Helios Development Group LLC</p>
+	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
+	 * <p><code>com.heliosapm.aop.retransformer.Retransformer.InstrumentedImpl</code></p>
 	 */
 	public static class InstrumentedImpl {
 		/** The annotation instance */

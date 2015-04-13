@@ -214,7 +214,7 @@ public class RetransformerTestCase extends BaseTest {
 		Assert.assertEquals("English", english.getLanguage());
 		retran.transform(English.class, new Object(){
 			@SuppressWarnings("unused")
-			private String language() {
+			private String language() {   //  <--- the replacement must be private too
 				return "CAFEBABE";
 			}			
 		}.getClass());
