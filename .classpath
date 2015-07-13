@@ -9,9 +9,10 @@
       <attribute value="jar:file:/home/nwhitehead/.m2/repository/junit/junit/4.8.2/junit-4.8.2-javadoc.jar!/" name="javadoc_location"/>
     </attributes>
   </classpathentry>
-  <classpathentry kind="var" path="M2_REPO/com/sun/jdmk/jmx-optional/1.0-b02-SNAPSHOT/jmx-optional-1.0-b02-SNAPSHOT.jar" sourcepath="M2_REPO/com/sun/jdmk/jmx-optional/1.0-b02-SNAPSHOT/jmx-optional-1.0-b02-SNAPSHOT-sources.jar">
+  <classpathentry kind="lib" path="/usr/lib/jvm/jdk1.8.0_31/lib/tools.jar"/>
+  <classpathentry kind="var" path="M2_REPO/com/betfair/net/java/opendmk/jmx-optional/1.0-b02/jmx-optional-1.0-b02.jar" sourcepath="M2_REPO/com/betfair/net/java/opendmk/jmx-optional/1.0-b02/jmx-optional-1.0-b02-sources.jar">
     <attributes>
-      <attribute value="jar:file:/home/nwhitehead/.m2/repository/com/sun/jdmk/jmx-optional/1.0-b02-SNAPSHOT/jmx-optional-1.0-b02-SNAPSHOT-javadoc.jar!/" name="javadoc_location"/>
+      <attribute value="jar:file:/home/nwhitehead/.m2/repository/com/betfair/net/java/opendmk/jmx-optional/1.0-b02/jmx-optional-1.0-b02-javadoc.jar!/" name="javadoc_location"/>
     </attributes>
   </classpathentry>
   <classpathentry kind="var" path="M2_REPO/org/javassist/javassist/3.18.2-GA/javassist-3.18.2-GA.jar"/>

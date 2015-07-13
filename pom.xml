@@ -13,7 +13,7 @@
  		<compiler-target.version>1.6</compiler-target.version>
  		<!-- Dependencies -->
 		<junit.version>4.8.2</junit.version>
-		<jmx-optional.version>1.0-b02-SNAPSHOT</jmx-optional.version>
+		<jmx-optional.version>1.0-b02</jmx-optional.version>
 		<javassist.version>3.18.2-GA</javassist.version>
 		<!-- Plugin Versions -->
 		<jarjar-plugin.version>1.9</jarjar-plugin.version>
@@ -47,7 +47,7 @@
 		
 
 		<dependency>
-		  <groupId>com.sun.jdmk</groupId>
+		  <groupId>com.betfair.net.java.opendmk</groupId>   <!-- only one reliably in public repo -->
 		  <artifactId>jmx-optional</artifactId>
 		  <version>${jmx-optional.version}</version>
 		</dependency>
