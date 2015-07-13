@@ -22,14 +22,16 @@ import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Collections;
-import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
+import javassist.CtClass;
+import javassist.bytecode.annotation.IntegerMemberValue;
 import javassist.bytecode.annotation.MemberValue;
 
 /**
@@ -42,11 +44,89 @@ import javassist.bytecode.annotation.MemberValue;
 
 public class AnnotationBuilder {
 	/** A map of named member values keyed by the element type */
-	protected final EnumMap<ElementType, Map<String, MemberValue>> members = new EnumMap<ElementType, Map<String, MemberValue>>(ElementType.class);
-	/** The indexed meta-data of the annotation type */
-	protected final EnumMap<ElementType, Map<String, MemberDef<?>>> index = new EnumMap<ElementType, Map<String, MemberDef<?>>>(ElementType.class);
+	protected final Map<String, MemberValue> members = new HashMap<String, MemberValue>();
 	/** A set of the member names on the annotation type */
 	protected final Set<String> memberNames;
+	/** The member definitions keyed by the member name */
+	final Map<String, MemberDef<?>> defs;
+	/** The element types supported by the annotation */
+	final Set<ElementType> elementTypes;
+	
+	
+	public static final Set<Class> ALLOWED_TYPES = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(
+			new Class[]{
+					byte.class, byte[].class, boolean.class, boolean[].class, short.class, short[].class, 
+					char.class, char[].class, int.class, int[].class, float.class, float[].class, long.class, 
+					long[].class, double.class, double[].class,
+					String.class, Enum.class, Annotation.class, Class.class,					
+					String[].class, Enum[].class, Annotation[].class, Class[].class
+			}
+	)));
+	
+	public static final Set<Class> ALLOWED_NON_FINAL_TYPES = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(
+			new Class[]{
+					Enum.class, Annotation.class					
+				}
+	)));
+	
+	public static final Map<Class, Class> P2O;
+	public static final Map<Class, Class> O2P;
+	/** Primitive type to Jvaassist CtClass type decode */
+	public static final Map<Class, CtClass> P2J;
+	
+	static {
+		final Map<Class, Class> o2p = new HashMap<Class, Class>();
+		final Map<Class, Class> p2o = new HashMap<Class, Class>();
+		final Map<Class, CtClass> p2j = new HashMap<Class, CtClass>();
+		// =========  full object --> primitive
+		o2p.put(java.lang.Byte.class, byte.class);
+		o2p.put(java.lang.Boolean.class, boolean.class);
+		o2p.put(java.lang.Short.class, short.class);
+		o2p.put(java.lang.Integer.class, int.class);
+		o2p.put(java.lang.Character.class, char.class);
+		o2p.put(java.lang.Float.class, float.class);
+		o2p.put(java.lang.Long.class, long.class);
+		o2p.put(java.lang.Double.class, double.class);
+		o2p.put(java.lang.Byte[].class, byte[].class);
+		o2p.put(java.lang.Boolean[].class, boolean[].class);
+		o2p.put(java.lang.Short[].class, short[].class);
+		o2p.put(java.lang.Character[].class, char[].class);
+		o2p.put(java.lang.Integer[].class, int[].class);
+		o2p.put(java.lang.Float[].class, float[].class);
+		o2p.put(java.lang.Long[].class, long[].class);
+		o2p.put(java.lang.Double[].class, double[].class);
+		// =========  primitive --> full object
+		p2o.put(byte.class, java.lang.Byte.class);
+		p2o.put(boolean.class, java.lang.Boolean.class);
+		p2o.put(short.class, java.lang.Short.class);
+		p2o.put(char.class, java.lang.Character.class);
+		p2o.put(int.class, java.lang.Integer.class);
+		p2o.put(float.class, java.lang.Float.class);
+		p2o.put(long.class, java.lang.Long.class);
+		p2o.put(double.class, java.lang.Double.class);
+		p2o.put(byte[].class, java.lang.Byte[].class);
+		p2o.put(boolean[].class, java.lang.Boolean[].class);
+		p2o.put(short[].class, java.lang.Short[].class);
+		p2o.put(char[].class, java.lang.Character[].class);
+		p2o.put(int[].class, java.lang.Integer[].class);
+		p2o.put(float[].class, java.lang.Float[].class);
+		p2o.put(long[].class, java.lang.Long[].class);
+		p2o.put(double[].class, java.lang.Double[].class);
+		// =========  primitive --> CtClass primtive
+		p2j.put(byte.class, CtClass.byteType);
+		p2j.put(boolean.class, CtClass.booleanType);
+		p2j.put(short.class, CtClass.shortType);
+		p2j.put(char.class, CtClass.charType);
+		p2j.put(int.class, CtClass.intType);
+		p2j.put(float.class, CtClass.floatType);
+		p2j.put(long.class, CtClass.longType);
+		p2j.put(double.class, CtClass.doubleType);
+		p2j.put(void.class, CtClass.voidType);		
+		O2P = Collections.unmodifiableMap(new HashMap<Class, Class>(o2p));
+		P2O = Collections.unmodifiableMap(new HashMap<Class, Class>(p2o));
+		P2J = Collections.unmodifiableMap(new HashMap<Class, CtClass>(p2j));
+	}
+	
 
 	/**
 	 * Creates a new AnnotationBuilder
@@ -91,10 +171,10 @@ public class AnnotationBuilder {
 	 * @param annotationClass The annotation class to build
 	 */
 	private AnnotationBuilder(final Class<? extends Annotation> annotationClass) {
-		for(ElementType et: ElementType.values()) {
-			members.put(et, new HashMap<String, MemberValue>());
-			index.put(et, new HashMap<String, MemberDef<?>>());
-		}
+//		for(ElementType et: ElementType.values()) {
+//			members.put(et, new HashMap<String, MemberValue>());
+//			index.put(et, new HashMap<String, MemberDef<?>>());
+//		}
 		final Method[] methods = annotationClass.getDeclaredMethods();
 		final Set<String> mn = new HashSet<String>(methods.length);
 		for(Method m: methods) {
@@ -102,13 +182,38 @@ public class AnnotationBuilder {
 		}
 		memberNames = Collections.unmodifiableSet(mn);
 		log("Member Names: " + memberNames);
-		final MemberDef<?>[] defs = MemberDef.getMemberDefs(annotationClass);
+		defs = MemberDef.getMemberDefs(annotationClass);
 		final Target target = annotationClass.getAnnotation(Target.class);
+		Set<ElementType> ets = EnumSet.noneOf(ElementType.class);
 		if(target!=null) {
 			for(ElementType et: target.value()) {
-				
+				ets.add(et);
 			}
 		}
+		this.elementTypes = Collections.unmodifiableSet(ets);
+	}
+	
+	/**
+	 * Adds a new member name and value to the builder
+	 * @param name The member name
+	 * @param value The member value
+	 * @return 
+	 */
+	public AnnotationBuilder add(final String name, final int value) {
+		validate(name, value);
+		members.put(name, new IntegerMemberValue(null, value));
+		return this;
+	}
+	
+	public void validate(final String name, final Object value) {
+		if(name==null || name.trim().isEmpty()) throw new IllegalArgumentException("Member name was null or empty");		
+		if(!memberNames.contains(name)) throw new IllegalArgumentException("Invalid member name [" + name + "]");
+		if(value==null) throw new IllegalArgumentException("The value passed was null for Member name [" + name + "]");
+		final Class<?> type = value.getClass();
+		for(MemberDef md: defs.values()) {
+			if(md.match(name, type)) return;
+		}
+		throw new IllegalArgumentException("Invalid type [" + value.getClass() + "] for member name [" + name + "]");
 	}
 	
 	public static void main(String[] agrs) {
@@ -127,6 +232,9 @@ public class AnnotationBuilder {
 		final String name;
 		/** The annotation member type */
 		final Class<T> type;
+		/** The annotation member type upped alt */
+		final Class<T> otype;
+		
 		/** The annotation member default value */
 		final T value;
 		
@@ -135,13 +243,14 @@ public class AnnotationBuilder {
 		 * @param type The annotation type
 		 * @return the array of member definitions
 		 */
-		public static <T extends Annotation> MemberDef<?>[] getMemberDefs(final Class<T> type) {
+		@SuppressWarnings("unchecked")
+		public static <T extends Annotation> Map<String, MemberDef<?>> getMemberDefs(final Class<T> type) {			
 			final Method[] methods = type.getDeclaredMethods();
-			final Set<MemberDef<?>> defs = new LinkedHashSet<MemberDef<?>>(methods.length);
+			final Map<String, MemberDef<?>> map = new HashMap<String, MemberDef<?>>(methods.length);			
 			for(Method method: methods) {
-				defs.add(new MemberDef(method.getName(), method.getReturnType(), method.getDefaultValue()));
+				map.put(method.getName(), new MemberDef(method.getName(), method.getReturnType(), method.getDefaultValue()));
 			}
-			return defs.toArray(new MemberDef[methods.length]);
+			return Collections.unmodifiableMap(map);
 		}
 		
 		/**
@@ -154,9 +263,21 @@ public class AnnotationBuilder {
 			this.name = name;
 			this.type = type;
 			this.value = value;
+			this.otype = P2O.get(type);
 		}
 		
-		
+		/**
+		 * Tests the passed member name and value to see if it is a match for this member def
+		 * @param name The member name
+		 * @param valueType The member value type
+		 * @return true for a match, false otherwise
+		 */
+		public boolean match(final String name, final Class<?> valueType) {
+			if(name==null || name.trim().isEmpty()) throw new IllegalArgumentException("The member name was null or empty");
+			if(value==null) throw new IllegalArgumentException("The member type was null");
+			if(!this.name.equals(name)) return false;			
+			return (valueType.equals(this.type) || valueType.equals(this.otype));
+		}
 		
 		/**
 		 * Returns the member name
