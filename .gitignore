@@ -7,6 +7,15 @@
 *.jar
 *.war
 *.ear
+*.bak
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+
+.settings/
+.classpath
+.project
+target/
+${sys:tsdb.logging.dir}/
+dependency-reduced-pom.xml
+bin/
