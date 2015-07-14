@@ -218,6 +218,10 @@ public class Retransformer {
 			throw new RuntimeException("Failed to get descriptor for method [" + method.toGenericString() + "]", ex);
 		}
 	}
+	
+	public static String getMethodDescriptor(final String name, final Object...typeArgs) {
+		if(name==null) throw new IllegalArgumentException("Passed method name was null");
+	}
 
 	/**
 	 * Creates a new method provided source classfile transformer

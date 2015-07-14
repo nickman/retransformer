@@ -33,5 +33,5 @@ package test.com.heliosapm.aop.retransformer.testclasses;
  */
 
 public @interface TestAnnotation {
-	Integer id();
+	int id();
 }

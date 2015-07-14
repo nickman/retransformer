@@ -20,6 +20,7 @@ package com.heliosapm.aop.retransformer;
 
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -30,9 +31,25 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import com.sun.tools.javac.code.Attribute.RetentionPolicy;
+
 import javassist.CtClass;
+import javassist.bytecode.AnnotationsAttribute;
+import javassist.bytecode.ClassFile;
+import javassist.bytecode.ConstPool;
+import javassist.bytecode.annotation.ArrayMemberValue;
+import javassist.bytecode.annotation.BooleanMemberValue;
+import javassist.bytecode.annotation.ByteMemberValue;
+import javassist.bytecode.annotation.CharMemberValue;
+import javassist.bytecode.annotation.ClassMemberValue;
+import javassist.bytecode.annotation.DoubleMemberValue;
+import javassist.bytecode.annotation.EnumMemberValue;
+import javassist.bytecode.annotation.FloatMemberValue;
 import javassist.bytecode.annotation.IntegerMemberValue;
+import javassist.bytecode.annotation.LongMemberValue;
 import javassist.bytecode.annotation.MemberValue;
+import javassist.bytecode.annotation.ShortMemberValue;
+import javassist.bytecode.annotation.StringMemberValue;
 
 /**
  * <p>Title: AnnotationBuilder</p>
@@ -44,13 +61,18 @@ import javassist.bytecode.annotation.MemberValue;
 
 public class AnnotationBuilder {
 	/** A map of named member values keyed by the element type */
-	protected final Map<String, MemberValue> members = new HashMap<String, MemberValue>();
+	protected final Map<String, MemberValueFactory> members = new HashMap<String, MemberValueFactory>();
 	/** A set of the member names on the annotation type */
 	protected final Set<String> memberNames;
 	/** The member definitions keyed by the member name */
 	final Map<String, MemberDef<?>> defs;
 	/** The element types supported by the annotation */
 	final Set<ElementType> elementTypes;
+	
+	/** The annotation class we're applying */
+	final Class<? extends Annotation> annotationClass;
+	/** Indicates if this annotation has runtime visibility */
+	final boolean visible;
 	
 	
 	public static final Set<Class> ALLOWED_TYPES = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(
@@ -175,6 +197,9 @@ public class AnnotationBuilder {
 //			members.put(et, new HashMap<String, MemberValue>());
 //			index.put(et, new HashMap<String, MemberDef<?>>());
 //		}
+		this.annotationClass = annotationClass;
+		final Retention retention = this.annotationClass.getAnnotation(Retention.class);
+		visible = (retention==null || !retention.value().equals(RetentionPolicy.RUNTIME));
 		final Method[] methods = annotationClass.getDeclaredMethods();
 		final Set<String> mn = new HashSet<String>(methods.length);
 		for(Method m: methods) {
@@ -194,16 +219,486 @@ public class AnnotationBuilder {
 	}
 	
 	/**
-	 * Adds a new member name and value to the builder
-	 * @param name The member name
-	 * @param value The member value
-	 * @return 
+	 * Applies the built annotation to the passed CtClass instances
+	 * @param clazzes The CtClasses to apply the annotation to
 	 */
-	public AnnotationBuilder add(final String name, final int value) {
-		validate(name, value);
-		members.put(name, new IntegerMemberValue(null, value));
-		return this;
+	public void applyTo(final CtClass...clazzes) {
+		for(CtClass clazz: clazzes) {
+			final ClassFile classFile = clazz.getClassFile();
+			final ConstPool constPool = classFile.getConstPool();
+			final javassist.bytecode.annotation.Annotation annot = new javassist.bytecode.annotation.Annotation(this.annotationClass.getName(), constPool);
+			final AnnotationsAttribute attr = new AnnotationsAttribute(constPool, visible ? AnnotationsAttribute.visibleTag : AnnotationsAttribute.invisibleTag);
+			for(Map.Entry<String, MemberValueFactory> entry: members.entrySet()) {
+				annot.addMemberValue(entry.getKey(), entry.getValue().forValue(constPool));
+			}
+			attr.addAnnotation(annot);
+			classFile.addAttribute(attr);
+		}		
 	}
+	
+  
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final Class<?> value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+      	@Override
+      	public MemberValue forValue(final ConstPool pool) {
+      		return new ClassMemberValue(value.getName(), pool);
+      	}
+      });
+      return this;
+  }
+//
+//  /**
+//   * Adds a new member name and class name to the builder
+//   * @param name The member name
+//   * @param className The class name
+//   * @return this annotation builder
+//   */
+//  public AnnotationBuilder addClassMember(final String name, final String className) {
+//  		if(name==null || name.trim().isEmpty()) throw new IllegalArgumentException("The member name was null or empty");
+//      if(!this.memberNames.contains(name)) throw new IllegalArgumentException("[" + name + "] is not a valid member value");
+//      members.put(name, new ClassMemberValue(className, null));
+//      return this;
+//  }
+//  
+//  /**
+//   * Adds a new member name and value to the builder
+//   * @param name The member name
+//   * @param value The member value
+//   * @return this annotation builder
+//   */
+//  public <T extends Enum<T>> AnnotationBuilder add(final String name, final T value) {
+//      validate(name, value);
+//      final EnumMemberValue emv = new EnumMemberValue(null);
+//      emv.setType(value.getDeclaringClass().getName());
+//      emv.setValue(value.name());
+//      members.put(name, emv);
+//      return this;
+//  }
+//
+//  /**
+//   * Adds a new member name and value to the builder
+//   * @param name The member name
+//   * @param value The member value
+//   * @return this annotation builder
+//   */
+//  public <T extends Enum<T>> AnnotationBuilder add(final String name, final T[] value) {
+//      validate(name, value);
+//      final ArrayMemberValue amv = new ArrayMemberValue(null);
+//      final MemberValue[] mvs = new MemberValue[value.length];      
+//      for(int i = 0; i < value.length; i++) {
+//      	final EnumMemberValue emv = new EnumMemberValue(null);
+//        emv.setType(value[i].getDeclaringClass().getName());
+//        emv.setValue(value[i].name());      	
+//      }
+//      amv.setValue(mvs);
+//      members.put(name, amv);
+//      return this;
+//  }
+
+//  /**
+//   * Adds a new member name and value to the builder
+//   * @param name The member name
+//   * @param value The member value
+//   * @return this annotation builder
+//   */
+//  public AnnotationBuilder add(final String name, final Class<?>[] value) {
+//      validate(name, value);
+//      final ArrayMemberValue amv = new ArrayMemberValue(null);
+//      final MemberValue[] mvs = new MemberValue[value.length];
+//      for(int i = 0; i < value.length; i++) {
+//          mvs[i] = new ClassMemberValue(value[i].getName(), null);
+//      }
+//      amv.setValue(mvs);
+//      members.put(name, amv);
+//      return this;
+//  }  
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final byte value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new ByteMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final byte[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new ByteMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final boolean value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new BooleanMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final boolean[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new BooleanMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final short value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new ShortMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final short[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new ShortMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final int value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new IntegerMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final int[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new IntegerMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final float value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new FloatMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final float[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new FloatMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final long value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new LongMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final long[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new LongMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final double value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new DoubleMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final double[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new DoubleMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final char value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new CharMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final char[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new CharMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public AnnotationBuilder add(final String name, final String value) {
+      validate(name, value);
+      members.put(name, new MemberValueFactory() {
+          @Override
+          public MemberValue forValue(final ConstPool pool) {
+              return new StringMemberValue(value, pool);
+          }
+      });
+      return this;
+  }
+
+
+    /**
+     * Adds a new member name and value to the builder
+     * @param name The member name
+     * @param value The member value
+     * @return this annotation builder
+     */
+    public AnnotationBuilder add(final String name, final String[] value) {
+        validate(name, value);
+        members.put(name, new MemberValueFactory() {
+            @Override
+            public MemberValue forValue(final ConstPool pool) {
+                final ArrayMemberValue amv = new ArrayMemberValue(pool);
+                final MemberValue[] mvs = new MemberValue[value.length];                
+                for(int i = 0; i < value.length; i++) {
+                    mvs[i] = new StringMemberValue(value[i], pool);
+                }
+                amv.setValue(mvs);                        
+                return amv;
+            }
+        });
+        return this;
+    }
+
+  
 	
 	public void validate(final String name, final Object value) {
 		if(name==null || name.trim().isEmpty()) throw new IllegalArgumentException("Member name was null or empty");		

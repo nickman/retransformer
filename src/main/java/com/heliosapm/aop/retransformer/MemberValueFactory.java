@@ -36,5 +36,5 @@ import javassist.bytecode.annotation.MemberValue;
  */
 
 public interface MemberValueFactory {
-	public MemberValue forValue(final Object value, final ConstPool pool);
+	public MemberValue forValue(final ConstPool pool);
 }
