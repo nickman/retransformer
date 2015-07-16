@@ -13,9 +13,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javassist.ByteArrayClassPath;
 import javassist.ClassClassPath;
+import javassist.ClassPath;
 import javassist.ClassPool;
 import javassist.CtClass;
 import javassist.CtMethod;
@@ -23,6 +25,7 @@ import javassist.LoaderClassPath;
 import javassist.NotFoundException;
 import javassist.bytecode.AnnotationsAttribute;
 import javassist.bytecode.ConstPool;
+import javassist.bytecode.Descriptor;
 import javassist.bytecode.annotation.LongMemberValue;
 import javassist.bytecode.annotation.StringMemberValue;
 
@@ -219,8 +222,131 @@ public class Retransformer {
 		}
 	}
 	
-	public static String getMethodDescriptor(final String name, final Object...typeArgs) {
+	private static final AtomicLong tempClassSerial = new AtomicLong(0L);
+	private static final Map<Class<?>, CtClass> PRIMITIVES;
+	private static final Map<String, CtClass> PRIMITIVENAMES;
+	
+	static {
+		final Map<Class<?>, CtClass> p = new HashMap<Class<?>, CtClass>();
+		final Map<String, CtClass> ps = new HashMap<String, CtClass>();
+		p.put(byte.class, CtClass.byteType);
+		p.put(boolean.class, CtClass.booleanType);
+		p.put(char.class, CtClass.charType);
+		p.put(short.class, CtClass.shortType);
+		p.put(int.class, CtClass.intType);
+		p.put(float.class, CtClass.floatType);
+		p.put(long.class, CtClass.longType);
+		p.put(double.class, CtClass.doubleType);
+		p.put(void.class, CtClass.voidType);
+
+		ps.put(byte.class.getName(), CtClass.byteType);
+		ps.put(boolean.class.getName(), CtClass.booleanType);
+		ps.put(char.class.getName(), CtClass.charType);
+		ps.put(short.class.getName(), CtClass.shortType);
+		ps.put(int.class.getName(), CtClass.intType);
+		ps.put(float.class.getName(), CtClass.floatType);
+		ps.put(long.class.getName(), CtClass.longType);
+		ps.put(double.class.getName(), CtClass.doubleType);
+		ps.put(void.class.getName(), CtClass.voidType);		
+
+		PRIMITIVES = Collections.unmodifiableMap(p);
+		PRIMITIVENAMES = Collections.unmodifiableMap(ps);
+	}
+	
+	/**
+	 * Returns the method signature for a method of the passed name with a signature matching the passed type arguments
+	 * and a void return type
+	 * @param name The method name
+	 * @param typeArgs An object array of types matching the intended signature
+	 * @return the method descriptor
+	 */
+	public static String getMethodDescriptorFromValues(final String name, final Object...typeArgs) {
+		return getMethodDescriptorFromValues(name, null, typeArgs);
+	}
+	
+	/**
+	 * Returns the method signature for a method of the passed name with a signature matching the passed type arguments
+	 * and a void return type
+	 * @param name The method name
+	 * @param returnType A value of the return type class. Assumed to be void if null.
+	 * @param typeArgs An object array of types matching the intended signature
+	 * @return the method descriptor
+	 */
+	public static String getMethodDescriptorFromValues(final String name, final Object returnType, final Object...typeArgs) {
+		return getMethodDescriptorFromValues(name, returnType==null ? null : returnType.getClass(), typeArgs);
+	}
+	
+	
+	/**
+	 * Returns the method signature for a method of the passed name with a signature matching the passed type arguments
+	 * @param name The method name
+	 * @param returnType The return type of the method
+	 * @param typeArgs An object array of types matching the intended signature
+	 * @return the method descriptor
+	 */
+	public static String getMethodDescriptorFromValues(final String name, final Class<?> returnType, final Object...typeArgs) {
+		final Class[] sig = new Class[typeArgs.length];
+		for(int i = 0; i < typeArgs.length; i++) {
+			sig[i] = typeArgs[i].getClass();
+		}
+		return getMethodDescriptor(name, returnType, sig);
+		
+	}
+	
+	
+	/**
+	 * Returns the method signature for a method of the passed name with a signature matching the passed type arguments
+	 * @param name The method name
+	 * @param returnType The return type of the method
+	 * @param typeArgs An class array of types matching the intended signature
+	 * @return the method descriptor
+	 */
+	public static String getMethodDescriptor(final String name, final Class<?> returnType, final Class<?>...typeArgs) {
 		if(name==null) throw new IllegalArgumentException("Passed method name was null");
+		try {
+			final ClassPool cp = new ClassPool();
+			cp.appendSystemPath();
+			final CtClass tmpClazz = cp.makeInterface("TempX" + tempClassSerial.incrementAndGet());
+			final CtClass[] params = new CtClass[typeArgs.length];
+			for(int i = 0; i < typeArgs.length; i++) {
+				params[i] = lookup(typeArgs[i], cp);
+			}
+			final CtMethod ctm = new CtMethod(returnType==null ? CtClass.voidType : lookup(returnType, cp), name, params, tmpClazz);
+			return ctm.getSignature();
+		} catch (Exception ex) {
+			throw new RuntimeException("Failed to get descriptor for method [" + name + Arrays.deepToString(typeArgs) + "]", ex);
+		}		
+	}
+	
+	/**
+	 * Looks up the CtClass for the passed type in the passed classpool
+	 * @param type The type to lookup
+	 * @param cp The classpool to look up in
+	 * @return the CtClass for the passed type
+	 */
+	public static final CtClass lookup(final Class<?> type, final ClassPool cp) {
+		if(type==null) throw new IllegalArgumentException("Passed type was null");
+		if(cp==null) throw new IllegalArgumentException("Passed ClassPool was null");
+		CtClass c = PRIMITIVES.get(type);
+		if(c!=null) return c;
+		final ClassLoader cl = type.getClassLoader();
+		final ClassPath classPath;
+		if(cl!=null) {
+			classPath = new LoaderClassPath(cl);
+			cp.appendClassPath(classPath);
+		} else {
+			classPath=null;
+		}
+		try {
+			cp.appendClassPath(classPath);
+			return cp.get(type.getName());
+		} catch (Exception ex) {
+			throw new RuntimeException("Failed to lookup type [" + type.getName() + "]", ex);
+		} finally {
+			if(classPath!=null) {
+				cp.removeClassPath(classPath);
+			}
+		}
 	}
 
 	/**
@@ -231,7 +357,7 @@ public class Retransformer {
 	 * @param transformTargets A set that the actual Java classes that need to be transformed should be written into
 	 * @return the transformer
 	 */
-	protected ClassFileTransformer newClassFileTransformer(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap, final Set<Class<?>> transformTargets) {
+	ClassFileTransformer newClassFileTransformer(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap, final Set<Class<?>> transformTargets) {
 		final Map<CtClass, Set<CtMethod>> actualTargets =  getMatchedMethods(targetClass, failOnNotFound, sourceMap);
 		if(actualTargets.isEmpty()) throw new RuntimeException("Failed to match any methods");
 		final Map<String, CtClass> internalClassNames = new HashMap<String, CtClass>(actualTargets.size());
@@ -312,7 +438,7 @@ public class Retransformer {
 	 * @param mockedClass The class containing the mocked template methods to inject into the target class
 	 * @return the transformer
 	 */
-	protected ClassFileTransformer newClassFileTransformer(final String internalFormClassName, final Class<?> mockedClass) {
+	ClassFileTransformer newClassFileTransformer(final String internalFormClassName, final Class<?> mockedClass) {
 		final String binaryName = binaryForm(internalFormClassName);		
 		return new ClassFileTransformer(){
 			@Override
