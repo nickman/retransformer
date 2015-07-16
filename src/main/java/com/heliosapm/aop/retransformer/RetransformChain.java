@@ -71,7 +71,7 @@ public class RetransformChain {
 	 * @param targetClass The target class to transform
 	 * @param mockedClass The source of the mocked methods to inject into the target
 	 */
-	public synchronized void transform(final Class<?> targetClass, Class<?> mockedClass) {
+	public synchronized void transform(final Class<?> targetClass, final Class<?> mockedClass) {
 
 	}
 	
