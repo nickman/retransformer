@@ -16,6 +16,7 @@
 		<jmx-optional.version>1.0-b02</jmx-optional.version>
 		<javassist.version>3.18.2-GA</javassist.version>
 		<utils.version>1.0-SNAPSHOT</utils.version>
+		<reflections.version>0.9.9-RC1</reflections.version>
 		<!-- Plugin Versions -->
 		<jarjar-plugin.version>1.9</jarjar-plugin.version>
 		<jar-plugin.version>2.3</jar-plugin.version>
@@ -43,6 +44,12 @@
 		  <artifactId>heliosutils</artifactId>
       <version>${utils.version}</version>    
     </dependency>		
+
+	<dependency>
+         <groupId>org.reflections</groupId>
+         <artifactId>reflections</artifactId>
+         <version>${reflections.version}</version>
+     </dependency>
 
         <dependency>
           <groupId>com.sun</groupId>
