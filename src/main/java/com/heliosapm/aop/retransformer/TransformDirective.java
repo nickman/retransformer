@@ -15,14 +15,22 @@
  */
 package com.heliosapm.aop.retransformer;
 
+import javassist.CtClass;
+
 /**
- * <p>Title: RetransformDirective</p>
+ * <p>Title: TransformDirective</p>
  * <p>Description: </p> 
  * <p>Company: Helios Development Group LLC</p>
  * @author Whitehead (nwhitehead AT heliosdev DOT org)
- * <p><code>com.heliosapm.aop.retransformer.RetransformDirective</code></p>
+ * <p><code>com.heliosapm.aop.retransformer.TransformDirective</code></p>
  */
 
-public interface RetransformDirective {
-
+public interface TransformDirective {
+	/**
+	 * Applies a transform to the passed {@link CtClass} and returns the modified version
+	 * @param ctClass The {@link CtClass} to modify
+	 * @param args The arguments to the directive
+	 * @return the modified {@link CtClass}
+	 */
+	public CtClass transform(CtClass ctClass, Object...args);
 }
