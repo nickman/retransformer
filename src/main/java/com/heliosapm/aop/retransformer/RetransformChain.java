@@ -18,11 +18,10 @@ under the License.
  */
 package com.heliosapm.aop.retransformer;
 
-import java.lang.instrument.ClassFileTransformer;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
+
+import org.reflections.Reflections;
 
 /**
  * <p>Title: RetransformChain</p>
@@ -67,35 +66,90 @@ public class RetransformChain {
 	}
 	
 	/**
-	 * Executes a mock class method replacement transformation
-	 * @param targetClass The target class to transform
-	 * @param mockedClass The source of the mocked methods to inject into the target
+	 * Retransforms the passed class with the built retransform chain
+	 * @param targetClass The class to transform
 	 */
-	public synchronized void transform(final Class<?> targetClass, final Class<?> mockedClass) {
-
+	public void retransform(final Class<?> targetClass) {
+		//
+	}
+	
+	public void retransform(final Reflections reflections, final Object...params) {
+		
 	}
 	
 	/**
-	 * Convenience method to execute a single provided source method replacement transformation
-	 * @param targetClass The target class to transform
-	 * @param methodName The method name to transform
-	 * @param source  The source of the transformed method
+	 * Executes a mock class method replacement transformation
+	 * @param mockedClass The source of the mocked methods to inject into the target
+	 * @return this chain
 	 */
-	public synchronized void transform(final Class<?> targetClass, final String methodName, final String source) {		
-		transform(targetClass, true, Collections.singletonMap(methodName, source));
+	public RetransformChain transform(final Class<?> mockedClass) {
+
+		return this;
 	}
 	
+	/**
+	 * TODO: DOCUMENT ME
+	 * Convenience method to execute a single provided source method replacement transformation
+	 * @param methodName The method name to transform
+	 * @param source  The source of the transformed method
+	 * @return this chain
+	 */
+	public RetransformChain transform(final String methodName, final String source) {		
+		transform(true, Collections.singletonMap(methodName, source));
+		
+		return this;
+	}
 	
+	/**
+	 * TODO: DOCUMENT ME
+	 * Convenience method to execute a single provided source method replacement transformation
+	 * @param methodName The method name to transform
+	 * @param argCount The number of arguments in the target method
+	 * @param source  The source of the transformed method
+	 * @return this chain
+	 */
+	public RetransformChain transform(final String methodName, final int argCount, final String source) {		
+		transform(true, Collections.singletonMap(methodName, source));
+		
+		return this;
+	}
+	
+	/**
+	 * TODO: DOCUMENT ME
+	 * Convenience method to execute a single provided source method replacement transformation
+	 * @param methodName The method name to transform
+	 * @param descriptor The target method signature
+	 * @param source  The source of the transformed method
+	 * @return this chain
+	 */
+	public RetransformChain transform(final String methodName, final String descriptor, final String source) {		
+		transform(true, Collections.singletonMap(methodName, source));
+		
+		return this;
+	}
 	
 	/**
 	 * Executes a provided source method replacement transformation
-	 * @param targetClass The target class to transform
 	 * @param failOnNotFound If true, any not found method will throw. Otherwise, if some (but not all) methods are not found, they are ignored.
 	 * @param sourceMap A map of source code replacements keyed by the method descriptor of the methods to replace
+	 * @return this chain
 	 */
-	public synchronized void transform(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap) {
+	public RetransformChain transform(final boolean failOnNotFound, final Map<String, String> sourceMap) {
 		
+		return this;
 	}
+	
+	/**
+	 * Applies an annotation builder to this transform chain
+	 * @param annotationBuilder The annotation builder to apply
+	 * @return this chain
+	 */
+	public RetransformChain transform(final AnnotationBuilder annotationBuilder) {
+		
+		return this;
+	}
+	
+	
 	
 
 }
