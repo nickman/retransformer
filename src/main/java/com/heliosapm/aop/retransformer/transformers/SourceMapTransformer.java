@@ -23,7 +23,7 @@ package com.heliosapm.aop.retransformer.transformers;
  * <p><code>com.heliosapm.aop.retransformer.transformers.SourceMapTransformer</code></p>
  */
 
-public class SourceMapTransformer {
+public abstract class SourceMapTransformer {
 
 	/**
 	 * Creates a new SourceMapTransformer
