@@ -48,7 +48,7 @@ public class Retransformer {
 	public static final String INSTR_PROVIDER_PROP = "instrumentation.provider"; 
 	
 	/** The local agent installer class name */
-	public static final String AGENT_INSTALLER_CLASS = "com.heliosapm.aop.retransformer.LocalAgentInstaller";
+	public static final String AGENT_INSTALLER_CLASS = "com.heliosapm.shorthand.attach.vm.agent.LocalAgentInstaller";
 	/** The local agent installer method name */
 	public static final String AGENT_INSTALLER_METHOD = "getInstrumentation";
 
