@@ -431,6 +431,10 @@ public class Retransformer {
 		};
 	}
 	
+	public Instrumentation getInstrumentation() {
+		return instrumentation;
+	}
+	
 	
 	/**
 	 * Creates a new method replacement classfile transformer

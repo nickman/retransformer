@@ -21,8 +21,13 @@ package com.heliosapm.aop.retransformer;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.lang.instrument.ClassFileTransformer;
+import java.lang.instrument.IllegalClassFormatException;
+import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
+import java.security.ProtectionDomain;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -30,13 +35,15 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
 
-import com.sun.tools.javac.code.Attribute.RetentionPolicy;
-
+import javassist.ClassPool;
 import javassist.CtClass;
+import javassist.LoaderClassPath;
 import javassist.bytecode.AnnotationsAttribute;
 import javassist.bytecode.ClassFile;
 import javassist.bytecode.ConstPool;
+import javassist.bytecode.annotation.AnnotationMemberValue;
 import javassist.bytecode.annotation.ArrayMemberValue;
 import javassist.bytecode.annotation.BooleanMemberValue;
 import javassist.bytecode.annotation.ByteMemberValue;
@@ -50,6 +57,11 @@ import javassist.bytecode.annotation.LongMemberValue;
 import javassist.bytecode.annotation.MemberValue;
 import javassist.bytecode.annotation.ShortMemberValue;
 import javassist.bytecode.annotation.StringMemberValue;
+
+import javax.xml.ws.soap.Addressing;
+import javax.xml.ws.soap.AddressingFeature.Responses;
+
+
 
 /**
  * <p>Title: AnnotationBuilder</p>
@@ -74,6 +86,26 @@ public class AnnotationBuilder {
 	/** Indicates if this annotation has runtime visibility */
 	final boolean visible;
 	
+	/** The parent annotation builder stack in a nested annotation builder used when we're adding an annotation which itself needs an annotation builder */
+	protected final Stack<NamedAnnotationBuilder> annotationBuilderStack = new Stack<NamedAnnotationBuilder>(); 
+	
+	private class NamedAnnotationBuilder {
+		/** The intended annotation's annotation builder */
+		final AnnotationBuilder annotationBuilder;
+		/** The intended annotation's name */
+		final String name;
+		/**
+		 * Creates a new NamedAnnotationBuilder
+		 * @param name The intended annotation's name
+		 * @param annotationBuilder The intended annotation's annotation builder
+		 */
+		public NamedAnnotationBuilder(final String name, final AnnotationBuilder annotationBuilder) {
+			this.annotationBuilder = annotationBuilder;
+			this.name = name;
+		}
+		
+		
+	}
 	
 	public static final Set<Class> ALLOWED_TYPES = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(
 			new Class[]{
@@ -199,7 +231,7 @@ public class AnnotationBuilder {
 //		}
 		this.annotationClass = annotationClass;
 		final Retention retention = this.annotationClass.getAnnotation(Retention.class);
-		visible = (retention==null || !retention.value().equals(RetentionPolicy.RUNTIME));
+		visible = (retention!=null && retention.value().equals(RetentionPolicy.RUNTIME));
 		final Method[] methods = annotationClass.getDeclaredMethods();
 		final Set<String> mn = new HashSet<String>(methods.length);
 		for(Method m: methods) {
@@ -223,6 +255,7 @@ public class AnnotationBuilder {
 	 * @param clazzes The CtClasses to apply the annotation to
 	 */
 	public void applyTo(final CtClass...clazzes) {
+		if(!annotationBuilderStack.isEmpty()) throw new IllegalStateException("The annotation builder stack is not empty");
 		for(CtClass clazz: clazzes) {
 			final ClassFile classFile = clazz.getClassFile();
 			final ConstPool constPool = classFile.getConstPool();
@@ -380,6 +413,52 @@ public class AnnotationBuilder {
       return this;
   }
 
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public <E extends Enum<E>> AnnotationBuilder add(final String name, final E value) {
+    validate(name, value);
+    members.put(name, new MemberValueFactory() {
+        @Override
+        public MemberValue forValue(final ConstPool pool) {
+            final EnumMemberValue emv  = new EnumMemberValue(pool);
+            emv.setType(value.getDeclaringClass().getName());
+            emv.setValue(value.name());
+            return emv;
+        }
+    });
+    return this;  	
+  }
+  
+  /**
+   * Adds a new member name and value to the builder
+   * @param name The member name
+   * @param value The member value
+   * @return this annotation builder
+   */
+  public <E extends Enum<E>> AnnotationBuilder add(final String name, final E[] value) {
+    validate(name, value);
+    members.put(name, new MemberValueFactory() {
+        @Override
+        public MemberValue forValue(final ConstPool pool) {
+        		final ArrayMemberValue amv = new ArrayMemberValue(pool);        		
+            final EnumMemberValue[] emvs  = new EnumMemberValue[value.length];
+            final Class<E> enumType = value[0].getDeclaringClass();
+            for(int i = 0; i < value.length; i++) {
+            	final EnumMemberValue emv = new EnumMemberValue(pool);
+              emv.setType(enumType.getName());
+              emv.setValue(value[i].name());
+            }
+            amv.setValue(emvs);
+            return amv;
+        }
+    });
+    return this;  	
+  }
+  
 
     /**
      * Adds a new member name and value to the builder
@@ -572,6 +651,43 @@ public class AnnotationBuilder {
         return this;
     }
 
+    /**
+     * Starts a new annotation to build an annotation to add to an annotatable target
+     * @param name The name of the annotation
+     * @param value The annotation class
+     * @return the new annotation builder
+     */
+    public AnnotationBuilder addAnnotation(final String name, final Class<? extends Annotation> value) {
+    	validate(name, value);
+    	final AnnotationBuilder inner = new AnnotationBuilder(value);
+    	inner.annotationBuilderStack.push(new NamedAnnotationBuilder("parent", this));
+    	this.annotationBuilderStack.push(new NamedAnnotationBuilder(name, inner));
+    	return inner;    	
+    }
+    
+    /**
+     * Adds the current annotation builder to the parent and pops the parent back into the current context
+     * @return the parent annotation builder
+     */
+    public AnnotationBuilder endAnnotation() {
+    	if(this.annotationBuilderStack.isEmpty()) throw new IllegalStateException("No annotation builder in state. Did you call addAnnotation first ?");
+    	final NamedAnnotationBuilder parent = this.annotationBuilderStack.pop();
+    	if(!"parent".equals(parent.name)) throw new IllegalStateException("The annotation builder in state was named [" + parent.name + "] but expected [parent]");
+    	if(parent.annotationBuilder.annotationBuilderStack.isEmpty()) throw new IllegalStateException("No annotation builder in parent state. Did you call addAnnotation first ?");
+    	final NamedAnnotationBuilder self = parent.annotationBuilder.annotationBuilderStack.pop();
+    	if(self.annotationBuilder != this) throw new IllegalStateException("The popped NamedAnnotationBuilder did not contain the expected annotation builder");     	
+    	members.put(self.name, new MemberValueFactory(){
+    		@Override
+    		public MemberValue forValue(final ConstPool pool) {
+    			final javassist.bytecode.annotation.Annotation annot = new javassist.bytecode.annotation.Annotation(self.annotationBuilder.annotationClass.getName(), pool);
+    			for(Map.Entry<String, MemberValueFactory> entry: self.annotationBuilder.members.entrySet()) {
+    				annot.addMemberValue(entry.getKey(), entry.getValue().forValue(pool));
+    			}
+    			return new AnnotationMemberValue(annot, pool);
+    		}
+    	});
+    	return parent.annotationBuilder;
+    }
 
   /**
    * Adds a new member name and value to the builder
@@ -711,10 +827,61 @@ public class AnnotationBuilder {
 		throw new IllegalArgumentException("Invalid type [" + value.getClass() + "] for member name [" + name + "]");
 	}
 	
+	
+	class TestClass {
+		
+	}
+	
 	public static void main(String[] agrs) {
 		log("Quickie Test");
-//		AnnotationBuilder ab = newBuilder(SuppressWarnings.class);
-		AnnotationBuilder ab = newBuilder("javax.xml.ws.soap.Addressing");
+		
+		// boolean enabled() default true;
+		// boolean required() default false;
+		// Responses responses() default Responses.ALL;   -->  javax.xml.ws.soap.AddressingFeature.Responses (enum)
+		// @Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
+		AnnotationBuilder ab = newBuilder("javax.xml.ws.soap.Addressing")
+				.add("enabled", false)
+				.add("required", true)
+				.add("responses", Responses.NON_ANONYMOUS);
+		try {
+			final ClassPool cp = new ClassPool();
+			cp.appendSystemPath();
+			cp.appendClassPath(new LoaderClassPath(TestClass.class.getClassLoader()));
+			final CtClass ctclazz = cp.get(TestClass.class.getName());
+			ab.applyTo(ctclazz);
+			final byte[] byteCode = ctclazz.toBytecode();
+			final String target = TestClass.class.getName().replace('.', '/');
+			log("Target:" + target);
+			final ClassFileTransformer cft = new ClassFileTransformer() {				
+				@Override
+				public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
+						ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
+					log("ClassName:" + className);
+					if(target.equals(className)) {
+						log("Match !");
+						return byteCode;
+					}
+					return null;
+				}
+			};
+			Instrumentation ins = Retransformer.getInstance().getInstrumentation();
+			try {				
+				ins.addTransformer(cft, true);
+				ins.retransformClasses(TestClass.class);
+			} finally {
+				ins.removeTransformer(cft);
+			}
+			log("Done");
+			Addressing addr = TestClass.class.getAnnotation(Addressing.class);
+			log("Annotation Present:" + addr!=null);
+			if(addr!=null) {
+				log("Enabled:" + addr.enabled());
+				log("Required:" + addr.required());
+				log("Responses:" + addr.responses().name());
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace(System.err);
+		}
 		
 	}
 	
