@@ -19,9 +19,12 @@ under the License.
 package com.heliosapm.aop.retransformer;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.reflections.Reflections;
+
+import javassist.CtClass;
 
 /**
  * <p>Title: RetransformChain</p>
@@ -38,6 +41,8 @@ public class RetransformChain {
 
 	/** The Retransformer instance */
 	protected final Retransformer retran;
+	/** The ct classes for the target transforms keyed by the classes we're going to transform */
+	protected final Map<Class<?>, CtClass> targetClasses = new HashMap<Class<?>, CtClass>();
 	
 	
 	/**

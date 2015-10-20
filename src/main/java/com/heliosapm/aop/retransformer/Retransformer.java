@@ -25,7 +25,6 @@ import javassist.LoaderClassPath;
 import javassist.NotFoundException;
 import javassist.bytecode.AnnotationsAttribute;
 import javassist.bytecode.ConstPool;
-import javassist.bytecode.Descriptor;
 import javassist.bytecode.annotation.LongMemberValue;
 import javassist.bytecode.annotation.StringMemberValue;
 
