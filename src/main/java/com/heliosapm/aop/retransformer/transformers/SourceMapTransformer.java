@@ -15,6 +15,10 @@
  */
 package com.heliosapm.aop.retransformer.transformers;
 
+import java.util.Map;
+
+import javassist.CtClass;
+
 /**
  * <p>Title: SourceMapTransformer</p>
  * <p>Description: </p> 
@@ -23,13 +27,18 @@ package com.heliosapm.aop.retransformer.transformers;
  * <p><code>com.heliosapm.aop.retransformer.transformers.SourceMapTransformer</code></p>
  */
 
-public abstract class SourceMapTransformer {
-
-	/**
-	 * Creates a new SourceMapTransformer
-	 */
-	public SourceMapTransformer() {
-		// TODO Auto-generated constructor stub
+public class SourceMapTransformer extends AbstractTransformer {
+	/** Public shareable instance */
+	public static final SourceMapTransformer INSTANCE = new SourceMapTransformer();
+	
+	public CtClass transform(final CtClass ct, final Map<String, String> sourceMap) {
+		if(ct==null) throw new IllegalArgumentException("The passed CtClass was null");
+		if(sourceMap!=null && !sourceMap.isEmpty()) {
+			
+		}
+		return ct;
 	}
+	
+	private SourceMapTransformer() {}
 
 }
