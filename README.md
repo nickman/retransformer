@@ -4,6 +4,10 @@ Simple Method Replacement for Java Using Retransforms
 
 Retransformer is intended as a testing tool and allows for the runtime modification of methods in targeted java classes. This can simplify testing procedure by allowing modifications to loaded objects and business classes to stub out functionality where the native functionality may not be available in the test environment.
 
+#### Note
+
+Retransformer has incorporated the [Reflections](https://github.com/ronmamo/reflections) source code and extended it in a couple of places.  This seems to be ok based on the rather liberal [DWTFWTPL License](https://github.com/ronmamo/reflections/blob/master/COPYING.txt). It's a good one. Take a read.
+
 #### Shutup and get to the point
 
 Ok. Assume a class called English which returns words in English, and the same for Spanish. Here's how to graft Spanish methods into the English class:

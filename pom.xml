@@ -15,7 +15,8 @@
 		<junit.version>4.8.2</junit.version>
 		<javassist.version>3.18.2-GA</javassist.version>
 		<utils.version>1.0-SNAPSHOT</utils.version>
-		<reflections.version>0.9.9-RC2</reflections.version>		
+		<guava.version>18.0</guava.version>
+		<!-- <reflections.version>0.9.9-RC2</reflections.version> -->		
 		<!-- Plugin Versions -->
 		<jarjar-plugin.version>1.9</jarjar-plugin.version>
 		<jar-plugin.version>2.3</jar-plugin.version>
@@ -44,11 +45,19 @@
       <version>${utils.version}</version>    
     </dependency>		
 
-	<dependency>
-         <groupId>org.reflections</groupId>
-         <artifactId>reflections</artifactId>
-         <version>${reflections.version}</version>
-     </dependency>
+        <dependency>
+            <groupId>com.google.code.findbugs</groupId>
+            <artifactId>jsr305</artifactId>
+            <version>3.0.0</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>dom4j</groupId>
+            <artifactId>dom4j</artifactId>
+            <version>1.6.1</version>
+            <optional>true</optional> <!-- case: when no xml de/serialization -->
+        </dependency>
+
 
         <dependency>
           <groupId>com.sun</groupId>
@@ -65,6 +74,36 @@
 		  <artifactId>javassist</artifactId>
 		  <version>${javassist.version}</version>
 		</dependency>
+
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>1.4</version>
+            <optional>true</optional> <!-- case: when no json de/serialization -->
+        </dependency>
+
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>servlet-api</artifactId>
+            <version>2.5</version>
+            <scope>provided</scope>
+            <optional>true</optional> <!-- case: when no servlet environment -->
+        </dependency>
+
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
+
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-vfs2</artifactId>
+            <version>2.0</version>
+            <scope>provided</scope>
+            <optional>true</optional> <!-- case: -->
+        </dependency>    
 
 	</dependencies>
 	<build>
