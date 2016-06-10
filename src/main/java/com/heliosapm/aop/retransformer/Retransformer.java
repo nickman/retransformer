@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -23,6 +24,7 @@ import javassist.ClassPath;
 import javassist.ClassPool;
 import javassist.CtBehavior;
 import javassist.CtClass;
+import javassist.CtConstructor;
 import javassist.CtMethod;
 import javassist.LoaderClassPath;
 import javassist.NotFoundException;
@@ -514,7 +516,7 @@ public class Retransformer {
 	 */
 	protected Map<CtClass, Set<CtBehavior>> getMatchedBehaviors(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap) {
 		try {
-			final Map<CtClass, Set<CtMethod>> actualTargets = new HashMap<CtClass, Set<CtMethod>>();
+			final Map<CtClass, Set<CtBehavior>> actualTargets = new HashMap<CtClass, Set<CtBehavior>>();
 			final ClassPool classPool = new ClassPool();
 			classPool.appendSystemPath();
 			classPool.appendClassPath(new ClassClassPath(targetClass));
@@ -532,29 +534,22 @@ public class Retransformer {
 					descriptor = key.substring(index+1).trim();									
 				}								
 				final boolean ctor = targetClass.getSimpleName().equals(bname); 
-				CtMethod matchedMethod = null;
-				CtConstructor matchedCtor = null;
+				CtBehavior matched = null;
 				try {
-					matchedMethod = matchMethod(methodName, descriptor, targetCtClass);
-					// =============================================================================================
-					//   Class redefinition !!!
-					// =============================================================================================
-//					if(!matchedMethod.getDeclaringClass().equals(targetCtClass)) {
-//						if(!Modifier.isFinal(matchedMethod.getModifiers())) {
-//							matchedMethod = CtNewMethod.copy(matchedMethod, targetCtClass, null);
-//							targetCtClass.addMethod(matchedMethod);
-//							
-//						}
-//					}
+					if(ctor) {
+						matched = matchCtor(descriptor, targetCtClass);
+					} else {
+						matched = matchMethod(bname, descriptor, targetCtClass);
+					}
 				} catch (Exception ex) {
 					if(failOnNotFound) throw ex;
 				}
-				Set<CtMethod> methods = actualTargets.get(matchedMethod.getDeclaringClass());
-				if(methods==null) {
-					methods = new HashSet<CtMethod>();
-					actualTargets.put(matchedMethod.getDeclaringClass(), methods);
+				Set<CtBehavior> behaviors = actualTargets.get(matched.getDeclaringClass());
+				if(behaviors==null) {
+					behaviors = new LinkedHashSet<CtBehavior>();
+					actualTargets.put(matched.getDeclaringClass(), behaviors);
 				}
-				methods.add(matchedMethod);				
+				behaviors.add(matched);				
 			}
 			return actualTargets;
 		} catch (Exception ex) {
@@ -615,6 +610,25 @@ public class Retransformer {
 			return actualTargets;
 		} catch (Exception ex) {
 			throw new RuntimeException(ex);
+		}
+	}
+	/**
+	 * Matches a constructor name and optional descriptor
+	 * @param descriptor The optional descriptor
+	 * @param klass The class to inspect
+	 * @return the matched ctor
+	 */
+	protected static CtConstructor matchCtor(final String descriptor, final CtClass klass) {
+		if(descriptor==null) {
+			final CtConstructor[] ctors = klass.getConstructors();
+			if(ctors.length!=1) throw new RuntimeException("Class [" + klass.getName() + "] has multiple ctors and no descriptor was supplied");
+			return ctors[0];
+		} else {
+			try {
+				return klass.getConstructor(descriptor);
+			} catch (NotFoundException e) {
+				throw new RuntimeException("Failed to find ctor for [" + klass.getName() + "] with descriptor [" + descriptor + "]");
+			}
 		}
 	}
 	
