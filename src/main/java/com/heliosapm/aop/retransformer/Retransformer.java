@@ -15,10 +15,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.heliosapm.shorthand.attach.vm.agent.LocalAgentInstaller;
+
 import javassist.ByteArrayClassPath;
 import javassist.ClassClassPath;
 import javassist.ClassPath;
 import javassist.ClassPool;
+import javassist.CtBehavior;
 import javassist.CtClass;
 import javassist.CtMethod;
 import javassist.LoaderClassPath;
@@ -104,6 +107,8 @@ public class Retransformer {
 				loge("Failed to get Instrumentation from LocalAgentInstaller: %s", t.toString());
 			}
 		}
+		// Lastly, use tools wrapper
+		instr = LocalAgentInstaller.getInstrumentation();
 		if(instr==null) {
 			// no dice. We can't continue without an Instrumentation instance, so we have to throw.
 			throw new RuntimeException("Failed to get an Instrumentation instance");
@@ -159,6 +164,9 @@ public class Retransformer {
 		transform(targetClass, true, Collections.singletonMap(methodName, source));
 	}
 	
+	public synchronized void transformInsert(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap) {
+		
+	}
 	
 	
 	/**
@@ -496,6 +504,64 @@ public class Retransformer {
 			}
 		}; 
 	}
+	
+	/**
+	 * Finds the matched methods 
+	 * @param targetClass The class to inspect and traverse from
+	 * @param failOnNotFound true to fail on not found, false otherwise
+	 * @param sourceMap The map of method names/descriptors and sources
+	 * @return A map of sets of target methods keyed by the class they are declared in
+	 */
+	protected Map<CtClass, Set<CtBehavior>> getMatchedBehaviors(final Class<?> targetClass, final boolean failOnNotFound, final Map<String, String> sourceMap) {
+		try {
+			final Map<CtClass, Set<CtMethod>> actualTargets = new HashMap<CtClass, Set<CtMethod>>();
+			final ClassPool classPool = new ClassPool();
+			classPool.appendSystemPath();
+			classPool.appendClassPath(new ClassClassPath(targetClass));
+			final CtClass targetCtClass = classPool.get(targetClass.getName());
+			for(Map.Entry<String, String> entry: sourceMap.entrySet()) {
+				String key = entry.getKey();								
+				String bname = null;
+				String descriptor = null;
+				int index = key.indexOf(':');
+				if(index==-1) {
+					bname = key.trim();
+					descriptor = null;
+				} else {
+					bname = key.substring(0, index).trim();
+					descriptor = key.substring(index+1).trim();									
+				}								
+				final boolean ctor = targetClass.getSimpleName().equals(bname); 
+				CtMethod matchedMethod = null;
+				CtConstructor matchedCtor = null;
+				try {
+					matchedMethod = matchMethod(methodName, descriptor, targetCtClass);
+					// =============================================================================================
+					//   Class redefinition !!!
+					// =============================================================================================
+//					if(!matchedMethod.getDeclaringClass().equals(targetCtClass)) {
+//						if(!Modifier.isFinal(matchedMethod.getModifiers())) {
+//							matchedMethod = CtNewMethod.copy(matchedMethod, targetCtClass, null);
+//							targetCtClass.addMethod(matchedMethod);
+//							
+//						}
+//					}
+				} catch (Exception ex) {
+					if(failOnNotFound) throw ex;
+				}
+				Set<CtMethod> methods = actualTargets.get(matchedMethod.getDeclaringClass());
+				if(methods==null) {
+					methods = new HashSet<CtMethod>();
+					actualTargets.put(matchedMethod.getDeclaringClass(), methods);
+				}
+				methods.add(matchedMethod);				
+			}
+			return actualTargets;
+		} catch (Exception ex) {
+			throw new RuntimeException(ex);
+		}
+	}
+	
 	
 	/**
 	 * Finds the matched methods 
